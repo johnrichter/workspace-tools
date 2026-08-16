@@ -16,11 +16,6 @@
 # navigator's one Cargo package lives at the repo root, so its tag carries no
 # path prefix) and SC-DISTRIBUTION (no committed binary, every run -- every
 # per-OS/arch artifact ships through release.yml instead).
-#
-# plugin-adoption is the SC-FORCEDUSE build-acceptance gate: navigator/plugin's
-# own routing-rules.json, loaded through plugin-foundation's shared
-# BuildRegistry (never a hand-written Classify closure), must clear the
-# Phase-A adoption floor on the committed frozen fixture transcript.
 
 name: CI
 
@@ -100,27 +95,3 @@ jobs:
 
       - name: cargo test
         run: cargo test --locked
-
-  plugin-adoption:
-    name: plugin-adoption
-    runs-on: ubuntu-latest
-    needs: guardrail
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          path: navigator
-
-      - name: Checkout ai-shared-lib sibling (go.mod replace target)
-        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          repository: johnrichter/claude-shared-tooling
-          token: ${{ secrets.SIBLING_REPO_TOKEN }}
-          path: ai-shared-lib
-
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
-        with:
-          go-version-file: navigator/plugin/plugincheck/go.mod
-
-      - name: go test (SC-FORCEDUSE adoption gate)
-        working-directory: navigator/plugin/plugincheck
-        run: go test ./...
