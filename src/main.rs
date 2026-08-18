@@ -75,7 +75,13 @@ fn main() -> ExitCode {
         sentinel::Adoption::Adopted(sentinel) => Some(sentinel),
         sentinel::Adoption::NotAdopted => None,
     };
-    let runtime = config::resolve(sentinel_ref, cli.json, cli.quiet_schema_warnings);
+    let runtime = match config::resolve(sentinel_ref, cli.json, cli.quiet_schema_warnings) {
+        Ok(runtime) => runtime,
+        Err(err) => {
+            let logger = build_logger(false);
+            return finish(&logger, &config_failure(command_name, &err));
+        }
+    };
     let logger = build_logger(runtime.json);
 
     let scanned = corpus::gather(&cwd, cli.command.dirs(), &logger);
@@ -328,6 +334,22 @@ fn sentinel_load_failure(verb: &'static str, err: &sentinel::SentinelError) -> R
         "precondition_unmet.sentinel.invalid",
         err.to_string(),
         Triage::manual("fix navigator.toml and retry"),
+    )
+}
+
+/// A runtime knob layer (in practice, a `WORKSPACE_TOOLS_*` environment
+/// value figment2 can't coerce, e.g. `WORKSPACE_TOOLS_JSON=1`) that doesn't
+/// resolve to a valid [`config::RuntimeConfig`]: the invocation's own
+/// environment is wrong -- [`Status::Usage`]. Reported before the logger's
+/// rendering mode is known, so this always builds a human-mode logger's
+/// record, same as [`sentinel_load_failure`].
+fn config_failure(verb: &'static str, err: &config::ConfigError) -> ResultRecord {
+    failure_record(
+        verb,
+        Status::Usage,
+        "usage.config.invalid_env",
+        err.to_string(),
+        Triage::manual("fix the WORKSPACE_TOOLS_* environment variable and retry"),
     )
 }
 

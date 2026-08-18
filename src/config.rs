@@ -9,6 +9,8 @@
 //! knobs a run answers to (`json`, `quiet_schema_warnings`), never the
 //! frontmatter profile a subcommand validates against.
 
+use std::fmt;
+
 use figment2::providers::{Env, Serialized};
 use figment2::Figment;
 use serde::{Deserialize, Serialize};
@@ -54,15 +56,39 @@ struct FromFlags {
     quiet_schema_warnings: Option<bool>,
 }
 
+/// A layer figment2 could not coerce into [`RuntimeConfig`] -- in practice,
+/// a `WORKSPACE_TOOLS_*` environment value that isn't one of figment2's
+/// recognized bool spellings (`WORKSPACE_TOOLS_JSON=1`, say, rather than
+/// `true`/`false`). The caller's problem, not this build's: reported through
+/// the same clikit contract every other outcome uses, never a raw panic.
+#[derive(Debug)]
+pub struct ConfigError(Box<figment2::Error>);
+
+impl fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "invalid runtime configuration: {}", self.0)
+    }
+}
+
+impl std::error::Error for ConfigError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.0)
+    }
+}
+
 /// Resolves the final [`RuntimeConfig`] for this invocation: CLI flags win
 /// over `WORKSPACE_TOOLS_*` environment variables, which win over
 /// `navigator.toml`, which wins over the built-in default.
-#[must_use]
+///
+/// # Errors
+/// [`ConfigError`] if any layer -- in practice, a malformed
+/// `WORKSPACE_TOOLS_*` environment value -- doesn't coerce to
+/// [`RuntimeConfig`]'s shape.
 pub fn resolve(
     sentinel: Option<&Sentinel>,
     cli_json: bool,
     cli_quiet_schema_warnings: bool,
-) -> RuntimeConfig {
+) -> Result<RuntimeConfig, ConfigError> {
     let mut figment = Figment::new().merge(Serialized::defaults(RuntimeConfig::default()));
 
     if let Some(sentinel) = sentinel {
@@ -80,7 +106,7 @@ pub fn resolve(
 
     figment
         .extract()
-        .expect("every layer is a valid RuntimeConfig source")
+        .map_err(|source| ConfigError(Box::new(source)))
 }
 
 #[cfg(test)]
@@ -109,7 +135,7 @@ mod tests {
 
     #[test]
     fn default_is_human_output_and_warnings_shown() {
-        let config = resolve(None, false, false);
+        let config = resolve(None, false, false).unwrap();
         assert!(!config.json);
         assert!(!config.quiet_schema_warnings);
     }
@@ -119,13 +145,13 @@ mod tests {
         let sentinel = adopted_sentinel(
             "sentinel_version = 2\nextensions = []\n\n[schema]\nprofile = \"core@2.0.0\"\nsuppress_merge_warnings = true\n",
         );
-        let config = resolve(Some(&sentinel), false, false);
+        let config = resolve(Some(&sentinel), false, false).unwrap();
         assert!(config.quiet_schema_warnings);
     }
 
     #[test]
     fn cli_flag_overrides_everything_below_it() {
-        let config = resolve(None, true, false);
+        let config = resolve(None, true, false).unwrap();
         assert!(config.json);
     }
 }
