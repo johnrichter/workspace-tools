@@ -14,7 +14,15 @@ use clap::{Args, Parser, Subcommand};
     about = "Deterministic frontmatter/tag-aware search and lint over the reachable file set",
     long_about = "navigator finds and validates frontmatter-tagged files across the directories \
         attached to a session (the \"reachable set\"): free-text + tag/type search, exact-path/type \
-        lookup, and schema-driven lint/fix of frontmatter blocks."
+        lookup, and schema-driven lint/fix of frontmatter blocks. It composes the frontmatter \
+        (schema parsing), facetquery (boolean/facet query evaluation) and bm25 (ranking) crates \
+        with the clikit result-record and logkit structured-logging libraries that give every \
+        verb its one-record-on-stdout, narration-on-stderr output contract.",
+    after_help = "EXAMPLES:\n    \
+        navigator search \"anoikis\" --type doc --limit 5\n    \
+        navigator find --type doc --tag topic:process\n    \
+        navigator lint .dat/README.md --json\n    \
+        navigator fix .anoikis/README.md --apply"
 )]
 pub struct Cli {
     /// Emit machine-readable JSON instead of a terse human summary.
@@ -34,21 +42,19 @@ pub struct Cli {
 #[derive(Subcommand, Debug)]
 pub enum Command {
     /// Free-text search over the reachable file set, filterable by tag/type.
-    #[command(
-        after_help = "EXAMPLE:\n    navigator search \"pricing calculator\" --type knowledge --limit 5"
-    )]
+    #[command(after_help = "EXAMPLE:\n    navigator search \"anoikis\" --type doc --limit 5")]
     Search(SearchArgs),
 
     /// Exact lookup by type/tag/path, no free-text ranking.
-    #[command(after_help = "EXAMPLE:\n    navigator find --type skill --tag topic:apm")]
+    #[command(after_help = "EXAMPLE:\n    navigator find --type doc --tag topic:process")]
     Find(FindArgs),
 
     /// Validate frontmatter against its schema for a file, dir, or the whole reachable set.
-    #[command(after_help = "EXAMPLE:\n    navigator lint the-work/deliverables --json")]
+    #[command(after_help = "EXAMPLE:\n    navigator lint .dat/README.md --json")]
     Lint(LintArgs),
 
     /// Apply schema-driven frontmatter fixes (dry-run by default).
-    #[command(after_help = "EXAMPLE:\n    navigator fix agent/identity.md --apply")]
+    #[command(after_help = "EXAMPLE:\n    navigator fix .anoikis/README.md --apply")]
     Fix(FixArgs),
 }
 

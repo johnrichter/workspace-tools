@@ -1,5 +1,11 @@
 //! `navigator` -- the CLI entry point.
 //!
+//! Composes the `frontmatter`, `facetquery` and `bm25` crates (schema
+//! parsing, boolean/facet query evaluation, and ranking) with the `clikit`
+//! and `logkit` crates (this binary's output contract) into `search`,
+//! `find`, `lint` and `fix` -- see `cli.rs`, which owns parsing and
+//! `--help`, for each verb's argument surface and worked examples.
+//!
 //! One invocation: parse args, resolve the runtime knobs (`flag > env >
 //! navigator.toml > default`), gather the reachable-set corpus through the
 //! out-of-tree freshness cache, run the requested subcommand against the
