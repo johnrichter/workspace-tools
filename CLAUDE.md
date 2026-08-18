@@ -1,4 +1,4 @@
-# navigator
+# workspace-tools
 
 > **Purpose:** The navigator frontmatter/tag-aware discovery CLI and Claude Code plugin.
 

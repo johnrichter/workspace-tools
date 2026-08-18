@@ -1,21 +1,21 @@
-# CI for navigator: hybrid BM25 + facet/boolean search/lint over a repo's
-# frontmatter-tagged files.
+# CI for workspace-tools: hybrid BM25 + facet/boolean search/lint over a
+# repo's frontmatter-tagged files.
 #
 # Cargo.toml `[patch]`es bm25/frontmatter/facetquery/clikit/logkit onto
 # ../ai-shared-lib/rust/* (a monorepo-development stand-in until those crates
 # cut their first `rust/<name>/v0.1.0` tag -- see Cargo.toml's own comment).
 # actions/checkout refuses any path outside $GITHUB_WORKSPACE, so every job
-# that runs `cargo` checks out both repos as workspace siblings (navigator,
-# ai-shared-lib) and runs with working-directory: navigator, which resolves
-# the patch target at ../ai-shared-lib exactly as a local dev checkout does.
-# claude-shared-tooling is private, so the sibling checkout needs read access
-# via SIBLING_REPO_TOKEN (a PAT scoped to that repo) rather than the default,
-# repo-scoped GITHUB_TOKEN.
+# that runs `cargo` checks out both repos as workspace siblings
+# (workspace-tools, ai-shared-lib) and runs with working-directory:
+# workspace-tools, which resolves the patch target at ../ai-shared-lib
+# exactly as a local dev checkout does. claude-shared-tooling is private, so
+# the sibling checkout needs read access via SIBLING_REPO_TOKEN (a PAT scoped
+# to that repo) rather than the default, repo-scoped GITHUB_TOKEN.
 #
 # guardrail gates every other job: SC-VERSIONING (bare tag on a tag push --
-# navigator's one Cargo package lives at the repo root, so its tag carries no
-# path prefix) and SC-DISTRIBUTION (no committed binary, every run -- every
-# per-OS/arch artifact ships through release.yml instead).
+# workspace-tools's one Cargo package lives at the repo root, so its tag
+# carries no path prefix) and SC-DISTRIBUTION (no committed binary, every
+# run -- every per-OS/arch artifact ships through release.yml instead).
 
 name: CI
 
@@ -70,11 +70,11 @@ jobs:
     needs: guardrail
     defaults:
       run:
-        working-directory: navigator
+        working-directory: workspace-tools
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          path: navigator
+          path: workspace-tools
 
       - name: Checkout ai-shared-lib sibling (Cargo.toml [patch] target)
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5

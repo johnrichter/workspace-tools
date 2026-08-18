@@ -1,4 +1,4 @@
-# navigator
+# workspace-tools
 
 The navigator frontmatter/tag-aware discovery CLI and Claude Code plugin.
 

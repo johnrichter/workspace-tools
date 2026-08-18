@@ -1,21 +1,21 @@
-# SC-DISTRIBUTION release: navigator cross-compiles its one binary into
-# per-OS/arch archives + checksums and publishes them as the tag's official
-# GitHub release. Unlike a Go CLI, Rust's cross-compilation needs a real
-# host per target OS (no single-runner GOOS/GOARCH matrix), so this workflow
-# splits into a build matrix (four OS/arch cells, one archive each) and a
-# publish job that combines them.
+# SC-DISTRIBUTION release: workspace-tools cross-compiles its one binary
+# into per-OS/arch archives + checksums and publishes them as the tag's
+# official GitHub release. Unlike a Go CLI, Rust's cross-compilation needs a
+# real host per target OS (no single-runner GOOS/GOARCH matrix), so this
+# workflow splits into a build matrix (four OS/arch cells, one archive each)
+# and a publish job that combines them.
 #
-# Triggers on a vX.Y.Z tag push (SC-VERSIONING: bare tag, since navigator's
-# one Cargo package lives at the repo root; guardrail's tag check enforces
-# this in ci.yml on the same push). A manual workflow_dispatch run defaults
-# to dry_run: true, so a change to this file can be exercised without
-# cutting a tag or touching GitHub Releases.
+# Triggers on a vX.Y.Z tag push (SC-VERSIONING: bare tag, since
+# workspace-tools's one Cargo package lives at the repo root; guardrail's
+# tag check enforces this in ci.yml on the same push). A manual
+# workflow_dispatch run defaults to dry_run: true, so a change to this file
+# can be exercised without cutting a tag or touching GitHub Releases.
 #
 # Cargo.toml `[patch]`es bm25/frontmatter/facetquery/clikit/logkit onto
 # ../ai-shared-lib/rust/* (see ci.yml's header) -- every build cell checks
-# out both repos as workspace siblings (navigator, ai-shared-lib) and builds
-# with working-directory: navigator, resolving the patch target the same
-# way a local dev checkout does.
+# out both repos as workspace siblings (workspace-tools, ai-shared-lib) and
+# builds with working-directory: workspace-tools, resolving the patch target
+# the same way a local dev checkout does.
 #
 # This workflow re-runs the tag conformance check itself rather than
 # trusting ci.yml's guardrail job: a tag push fires both workflows
@@ -101,11 +101,11 @@ jobs:
             archive_arch: arm64
     defaults:
       run:
-        working-directory: navigator
+        working-directory: workspace-tools
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          path: navigator
+          path: workspace-tools
 
       - name: Checkout ai-shared-lib sibling (Cargo.toml [patch] target)
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -147,7 +147,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: release-${{ matrix.name }}
-          path: navigator/dist/*.tar.gz
+          path: workspace-tools/dist/*.tar.gz
           if-no-files-found: error
 
   publish:
