@@ -33,6 +33,10 @@ globset = "0.4"
 dirs = "5.0"
 # Content hash for the freshness cache's touch-without-edit confirmation.
 sha2 = "0.10"
+# The current UTC timestamp `fix` stamps into a repaired `updated:` field.
+# The binary legitimately reads the clock (the pure libraries never do), so
+# `std` (for `now_utc`) plus `formatting`/`macros` are enabled here.
+time = { version = "0.3.53", features = ["formatting", "macros"] }
 
 # The three reused Rust libraries this CLI composes (pure ranking/parsing/
 # query logic; no CLI concerns of their own) plus the fleet's CLI output

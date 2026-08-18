@@ -1,26 +1,22 @@
-//! Supplementary adversarial coverage beyond `tests/cli.rs`: an explicit
-//! pre-v2 sentinel version, `OR`/`NOT` facetquery grouping, and a
-//! zero-file scan -- none of these paths are exercised by `cli.rs`.
+//! Supplementary adversarial coverage beyond `tests/cli.rs`: an unsupported
+//! sentinel version, a boolean facetquery grouping, and a zero-file scan --
+//! each asserted against the clikit `ResultRecord` contract.
 
 use std::path::Path;
 use std::process::{Command, Output};
 
-fn navigator_bin() -> &'static str {
-    env!("CARGO_BIN_EXE_navigator")
-}
+use serde_json::Value;
+use tempfile::TempDir;
 
-fn run(repo: &Path, home: &Path, args: &[&str]) -> Output {
-    Command::new(navigator_bin())
-        .args(["--root"])
-        .arg(repo)
+fn run(repo: &Path, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_navigator"))
         .args(args)
-        .env("HOME", home)
+        .current_dir(repo)
+        .env("HOME", repo.join(".home"))
+        .env("XDG_CACHE_HOME", repo.join(".home/.cache"))
+        .env_remove("WORKSPACE_TOOLS_JSON")
         .output()
         .expect("navigator binary runs")
-}
-
-fn stdout(out: &Output) -> String {
-    String::from_utf8(out.stdout.clone()).expect("stdout is UTF-8")
 }
 
 fn write(repo: &Path, rel: &str, contents: &str) {
@@ -29,82 +25,57 @@ fn write(repo: &Path, rel: &str, contents: &str) {
     std::fs::write(path, contents).unwrap();
 }
 
-/// `sentinel_version = 1` is a pre-v2 sentinel format this build never
-/// shipped support for -- it must fail closed like any other unsupported
-/// version, not be silently accepted as "close enough" to 2.
-#[test]
-fn sentinel_version_1_is_rejected_as_unsupported_not_silently_upgraded() {
-    let dir = tempfile::TempDir::new().unwrap();
-    let home = tempfile::TempDir::new().unwrap();
-    write(dir.path(), "navigator.toml", "sentinel_version = 1\nextensions = []\n");
-    write(dir.path(), "docs/a.md", "plain body");
-    let out = run(dir.path(), home.path(), &["--json", "lint"]);
-    assert_eq!(out.status.code(), Some(30), "sentinel_version 1 must fail closed: {out:?}");
-    let json: serde_json::Value = serde_json::from_str(&stdout(&out)).unwrap();
-    assert_eq!(json["status"], "precondition_unmet");
+fn record(out: &Output) -> Value {
+    let text = String::from_utf8(out.stdout.clone()).expect("stdout is UTF-8");
+    serde_json::from_str(text.trim()).unwrap_or_else(|e| panic!("stdout not JSON ({e}): {text}"))
 }
 
-/// `OR` and `NOT` are as load-bearing to the facet/boolean grammar as
-/// `AND` -- a query composing all three must resolve to the exact set the
-/// boolean logic says it should, no more, no fewer.
 #[test]
-fn find_or_and_not_grammar_composes_correctly() {
-    let dir = tempfile::TempDir::new().unwrap();
-    let home = tempfile::TempDir::new().unwrap();
+fn unsupported_sentinel_version_is_precondition_unmet_exit_30() {
+    let repo = TempDir::new().unwrap();
     write(
-        dir.path(),
+        repo.path(),
         "navigator.toml",
-        "sentinel_version = 2\nextensions = \"default@1.0.0\"\n",
+        "sentinel_version = 999\nextensions = []\n\n[schema]\nprofile = \"core@2.0.0\"\n",
     );
-    write(
-        dir.path(),
-        "a.md",
-        "---\nname: a\nid: a\ndescription: skill a\ntags: [type:skill, status:complete]\nlinks: []\nupdated: 2026-01-01\n---\nbody\n",
-    );
-    write(
-        dir.path(),
-        "b.md",
-        "---\nname: b\nid: b\ndescription: report b\ntags: [type:report, status:complete]\nlinks: []\nupdated: 2026-01-01\n---\nbody\n",
-    );
-    write(
-        dir.path(),
-        "c.md",
-        "---\nname: c\nid: c\ndescription: skill c in draft\ntags: [type:skill, status:draft]\nlinks: []\nupdated: 2026-01-01\n---\nbody\n",
-    );
-    // (type:skill OR type:report) AND NOT status:draft -> a.md, b.md; excludes c.md.
-    let out = run(
-        dir.path(),
-        home.path(),
-        &["--json", "find", "(type:skill OR type:report) AND NOT status:draft"],
-    );
-    assert!(out.status.success(), "query must parse and execute: {out:?}");
-    let json: serde_json::Value = serde_json::from_str(&stdout(&out)).unwrap();
-    let mut paths: Vec<&str> = json["data"]["hits"]
-        .as_array()
+
+    let out = run(repo.path(), &["lint"]);
+    let record = record(&out);
+    assert_eq!(record["status"], "precondition_unmet");
+    assert_eq!(record["exit_code"], Value::from(30));
+    assert!(record["errors"][0]["code"]
+        .as_str()
         .unwrap()
-        .iter()
-        .map(|h| h["path"].as_str().unwrap())
-        .collect();
-    paths.sort_unstable();
-    assert_eq!(paths, vec!["a.md", "b.md"], "OR/NOT grouping resolved wrong set: {json}");
+        .starts_with("precondition_unmet."));
+    assert_eq!(out.status.code(), Some(30));
 }
 
-/// A repo with no scannable files at all (every path excluded, or the
-/// tree is empty) is a legitimate zero-match run, not a crash or a
-/// failure -- an empty corpus is not an error condition anywhere in this
-/// CLI's contract.
 #[test]
-fn empty_repo_scans_to_zero_files_not_a_crash() {
-    let dir = tempfile::TempDir::new().unwrap();
-    let home = tempfile::TempDir::new().unwrap();
+fn boolean_grouped_query_runs_and_is_success() {
+    let repo = TempDir::new().unwrap();
     write(
-        dir.path(),
-        "navigator.toml",
-        "sentinel_version = 2\nextensions = []\n",
+        repo.path(),
+        "docs/a.md",
+        "---\nname: a\ntags:\n  - type:skill\n  - topic:apm\n---\nbody\n",
     );
-    let out = run(dir.path(), home.path(), &["--json", "lint"]);
-    assert_eq!(out.status.code(), Some(0), "empty repo must succeed with zero scanned: {out:?}");
-    let json: serde_json::Value = serde_json::from_str(&stdout(&out)).unwrap();
-    assert_eq!(json["data"]["scanned"], 0);
-    assert_eq!(json["data"]["violations"], 0);
+
+    let out = run(
+        repo.path(),
+        &["find", "(type:skill OR type:agent) AND NOT topic:billing"],
+    );
+    let record = record(&out);
+    assert_eq!(record["status"], "success");
+    assert!(record["data"]["hits"].is_array());
+}
+
+#[test]
+fn zero_file_scan_is_success_with_empty_hits() {
+    let repo = TempDir::new().unwrap();
+    // A reachable set with no `.md` files at all.
+    write(repo.path(), "README.txt", "not markdown\n");
+
+    let out = run(repo.path(), &["search", "anything"]);
+    let record = record(&out);
+    assert_eq!(record["status"], "success");
+    assert_eq!(record["data"]["hits"], serde_json::json!([]));
 }

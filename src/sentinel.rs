@@ -1,226 +1,735 @@
-//! The `navigator.toml` v2 sentinel and the schema-bundle model it resolves
-//! to: a repo's opt-in declaration of which frontmatter profile it
-//! validates against and which files `lint` covers, standardized so every
-//! adopting repo declares vocabulary the same way regardless of whether it
-//! ships its own pack or reuses an embedded one.
+//! The `navigator.toml` sentinel: the repo-root marker a repo commits to
+//! opt in to navigator. Its absence is not an error -- it means "not
+//! adopted, resolve to the neutral core-only floor" ([`profile_resolve`]).
 //!
-//! A repo with no `navigator.toml` is not an error -- it resolves to the
-//! neutral core-only floor ([`frontmatter::Profile::core_only`]), which
-//! validates every file against the schema's mechanisms with zero required
-//! fields and zero namespaces.
+//! # Schema
+//!
+//! The sentinel has its own formal, versioned schema -- it is not a
+//! free-form config. `sentinel_version` names the schema version this file
+//! was written against, so the format can evolve without breaking repos
+//! that adopted an earlier version. This module supports exactly the
+//! versions listed in [`SUPPORTED_SENTINEL_VERSIONS`]; loading a file
+//! declaring any other version is a clear error rather than a best-effort
+//! parse.
+//!
+//! Version 2 fields:
+//!
+//! | Field | Required | Type | Meaning |
+//! | --- | --- | --- | --- |
+//! | `sentinel_version` | yes | integer | This file's own schema version. |
+//! | `extensions` | yes | string or array of strings | Repo extension pack(s): a named bundle or a committed-file path each. A bare string is a single-element list; order is preserved. |
+//! | `navigator_version` | no | string | Gate/CI binary version pin. Parsed and type-checked here only. |
+//! | `schema.profile` | yes | string | Frontmatter profile + version this repo validates against, e.g. `"core@2.0.0"`. |
+//! | `schema.suppress_merge_warnings` | no | boolean | Suppresses schema-pack merge override/removal warnings; defaults to `false`. |
+//! | `lint.include` / `lint.exclude` | no | array of strings | Lint-scope glob hints. |
+//! | `symbols.languages` | no | array of strings | Languages the symbols pass should cover. |
+//!
+//! Unknown fields anywhere in the file are rejected -- a typo in a field
+//! name fails loudly instead of being silently ignored. The sentinel is a
+//! small, versioned contract, not an open config surface.
+//!
+//! # Parsing
+//!
+//! Parsed through figment2's TOML provider (SC-STACK), the same config
+//! mechanism the runtime knobs in [`crate::config`] resolve through -- this
+//! crate never reaches for a raw TOML parser of its own. The
+//! `sentinel_version` is read first through a permissive probe, then the
+//! full strict schema is extracted only once the version is confirmed
+//! supported: a file written against a future version -- which may
+//! legitimately carry fields this build doesn't know -- fails as a clear
+//! [`SentinelError::UnsupportedVersion`] ("upgrade navigator") rather than a
+//! misleading unknown-field parse error.
 
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use figment2::providers::{Format, Toml};
 use figment2::Figment;
-use frontmatter::{MergeWarning, Profile, ProfileError};
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
-/// `sentinel_version` values this build understands. A file declaring any
-/// other version fails to load rather than being parsed best-effort
-/// against the wrong shape.
+/// `sentinel_version` values this build of navigator understands.
 pub const SUPPORTED_SENTINEL_VERSIONS: &[u64] = &[2];
 
 /// The parsed, validated contents of a repo's `navigator.toml`. Field names
 /// mirror the file's own TOML keys, including `sentinel_version` repeating
-/// this struct's name -- the sentinel format dictates that key, not this
+/// the struct name -- the sentinel format dictates that key, not this
 /// crate's naming style.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 #[allow(clippy::struct_field_names)]
 pub struct Sentinel {
+    /// This file's own schema version. Validated against
+    /// [`SUPPORTED_SENTINEL_VERSIONS`] during [`load`].
     pub sentinel_version: u64,
-    /// Informational only: the repo's own build pin, not read by this
-    /// crate. Kept so `navigator_version` round-trips through
-    /// `deny_unknown_fields` instead of being rejected as unknown.
-    #[serde(default)]
-    #[allow(dead_code)]
-    pub navigator_version: Option<String>,
+
+    /// The repo's extension pack(s), in declaration order. Accepts a bare
+    /// string (normalized to a single-element list) or an array of strings.
+    /// Opaque to this module; resolution is [`crate::profile_resolve`]'s job.
     #[serde(deserialize_with = "deserialize_extensions")]
     pub extensions: Vec<String>,
+
+    /// The gate/CI binary version pin, when the repo pins one. Parsed and
+    /// type-checked here only.
     #[serde(default)]
-    pub schema: SchemaSection,
+    pub navigator_version: Option<String>,
+
+    /// The `[schema]` table: which frontmatter profile this repo validates
+    /// against, and how schema-pack merge warnings behave.
+    pub schema: SchemaConfig,
+
+    /// Optional lint scope hints. Absent entirely when the repo declares no
+    /// `[lint]` table.
     #[serde(default)]
-    pub lint: LintSection,
+    pub lint: Option<LintScope>,
+
+    /// Optional symbols-pass scope hints. Absent entirely when the repo
+    /// declares no `[symbols]` table.
+    #[serde(default)]
+    pub symbols: Option<SymbolsScope>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+/// `[schema]` table: the frontmatter profile this repo validates against,
+/// and schema-pack merge warning behavior.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct SchemaSection {
-    /// The frontmatter profile + version this repo validates against
-    /// (e.g. `"core@2.0.0"`), informational -- the embedded core is always
-    /// `core@2.0.0` and every embedded pack declares `extends` against it,
-    /// so this field is a repo-visible pin rather than a resolver input,
-    /// never read by this crate.
-    #[serde(default)]
-    #[allow(dead_code)]
-    pub profile: Option<String>,
+pub struct SchemaConfig {
+    /// Frontmatter profile + version this repo validates against, e.g.
+    /// `"core@2.0.0"`. Opaque to this module.
+    pub profile: String,
+
+    /// Suppresses the schema-pack merge override/removal warnings. Governs
+    /// merge warnings only -- never hard errors, never the degraded-state
+    /// notice. Defaults to `false`.
     #[serde(default)]
     pub suppress_merge_warnings: bool,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+/// Accepts a bare TOML string or an array of strings for `extensions`,
+/// normalizing both to an ordered `Vec<String>`.
+fn deserialize_extensions<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrList {
+        One(String),
+        Many(Vec<String>),
+    }
+
+    Ok(match StringOrList::deserialize(deserializer)? {
+        StringOrList::One(s) => vec![s],
+        StringOrList::Many(v) => v,
+    })
+}
+
+/// `[lint]` scope hints: which files a lint pass should consider.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct LintSection {
+pub struct LintScope {
     #[serde(default)]
     pub include: Vec<String>,
     #[serde(default)]
     pub exclude: Vec<String>,
 }
 
-/// Accepts a bare string (one extension) or an array of strings, so a repo
-/// with a single pack doesn't have to write `extensions = ["default@1.0.0"]`.
-fn deserialize_extensions<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum OneOrMany {
-        One(String),
-        Many(Vec<String>),
-    }
-    Ok(match OneOrMany::deserialize(deserializer)? {
-        OneOrMany::One(s) => vec![s],
-        OneOrMany::Many(v) => v,
-    })
+/// `[symbols]` scope hints: which languages a symbols pass should cover.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SymbolsScope {
+    #[serde(default)]
+    pub languages: Vec<String>,
 }
 
-/// Why a `navigator.toml` could not be loaded or resolved to a [`Profile`].
+/// A repo's declared relationship to navigator: either it committed a
+/// `navigator.toml` (adopted, with the parsed sentinel), or it didn't (not
+/// adopted, resolving to the neutral core-only floor). Modeled as an enum
+/// rather than a bare `Option` so callers read the semantic at the call
+/// site.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Adoption {
+    /// The repo committed a `navigator.toml` that parsed and validated.
+    Adopted(Sentinel),
+    /// No `navigator.toml` at the repo root. Not an error.
+    NotAdopted,
+}
+
+/// Everything that can go wrong loading a sentinel -- always specific enough
+/// to name the file and the exact defect.
 #[derive(Debug)]
 pub enum SentinelError {
-    Load(Box<figment2::Error>),
-    UnsupportedVersion(u64),
-    /// An `extensions` entry that is neither a known named bundle
-    /// (`embedded_pack_json`) nor a readable file at that path, relative to
-    /// the repo root.
-    UnresolvedExtension(String),
-    Profile(ProfileError),
+    /// The file exists but could not be read (permissions, non-UTF-8, a
+    /// directory in its place -- anything other than "does not exist,"
+    /// which is [`Adoption::NotAdopted`]).
+    Io {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    /// The file is not well-formed TOML, or a field's type/shape doesn't
+    /// match the schema (including an unknown field).
+    Parse {
+        path: PathBuf,
+        source: Box<figment2::Error>,
+    },
+    /// The file parsed, but declares a `sentinel_version` this build does
+    /// not support.
+    UnsupportedVersion {
+        path: PathBuf,
+        found: u64,
+        supported: &'static [u64],
+    },
 }
 
 impl fmt::Display for SentinelError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Load(e) => write!(f, "navigator.toml is not valid: {e}"),
-            Self::UnsupportedVersion(v) => write!(
-                f,
-                "navigator.toml declares sentinel_version {v}, this build supports {SUPPORTED_SENTINEL_VERSIONS:?}"
-            ),
-            Self::UnresolvedExtension(name) => write!(
-                f,
-                "extension '{name}' is neither a known bundle nor a file at that path"
-            ),
-            Self::Profile(e) => write!(f, "schema bundle did not resolve to a valid profile: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for SentinelError {}
-
-/// Reads and validates `path` as a v2 `navigator.toml`, via figment2's TOML
-/// provider per SC-STACK. Unknown fields anywhere in the file are rejected
-/// (`deny_unknown_fields`): the sentinel is a small, versioned contract,
-/// not an open config surface.
-pub fn load(path: &Path) -> Result<Sentinel, SentinelError> {
-    let sentinel: Sentinel = Figment::new()
-        .merge(Toml::file(path))
-        .extract()
-        .map_err(|e| SentinelError::Load(Box::new(e)))?;
-    if !SUPPORTED_SENTINEL_VERSIONS.contains(&sentinel.sentinel_version) {
-        return Err(SentinelError::UnsupportedVersion(sentinel.sentinel_version));
-    }
-    Ok(sentinel)
-}
-
-/// The schema bundle a resolved sentinel produces: the merged [`Profile`]
-/// every `search`/`find`/`lint` call validates and queries against, plus
-/// any non-fatal merge warnings the layering produced (an override or a
-/// removal -- see [`frontmatter::MergeWarning`]).
-pub struct SchemaBundle {
-    pub profile: Profile,
-    pub warnings: Vec<MergeWarning>,
-}
-
-/// Resolves `sentinel`'s `extensions` to a [`SchemaBundle`]: each entry is
-/// tried first as a named bundle (`frontmatter::embedded_pack_json`, e.g.
-/// `"default@1.0.0"`), then as a path to a committed pack file, relative to
-/// `repo_root`. Packs layer in declaration order onto the embedded core.
-///
-/// A v2 sentinel with an empty `extensions` list is a repo that opts into
-/// navigator (its `[lint]` scope, `[schema]` pin) while adopting only the
-/// core vocabulary -- it resolves to the same core-only floor a repo with no
-/// `navigator.toml` gets ([`neutral_bundle`]), never a hard failure, so the
-/// two ways to say "core vocabulary only" behave identically.
-pub fn resolve(sentinel: &Sentinel, repo_root: &Path) -> Result<SchemaBundle, SentinelError> {
-    if sentinel.extensions.is_empty() {
-        return Ok(neutral_bundle());
-    }
-    let mut pack_texts: Vec<String> = Vec::with_capacity(sentinel.extensions.len());
-    for entry in &sentinel.extensions {
-        if let Some(embedded) = frontmatter::embedded_pack_json(entry) {
-            pack_texts.push(embedded.to_string());
-            continue;
-        }
-        let path = repo_root.join(entry);
-        match std::fs::read_to_string(&path) {
-            Ok(text) => pack_texts.push(text),
-            Err(_) => return Err(SentinelError::UnresolvedExtension(entry.clone())),
-        }
-    }
-    let pack_refs: Vec<&str> = pack_texts.iter().map(String::as_str).collect();
-    let (profile, warnings) = Profile::from_packs(frontmatter::embedded_core_json(), &pack_refs)
-        .map_err(SentinelError::Profile)?;
-    Ok(SchemaBundle { profile, warnings })
-}
-
-/// The floor a repo with no `navigator.toml` resolves to: the embedded
-/// core with zero vocabulary. Every file validates against the schema's
-/// mechanisms, with nothing required and no namespace to query.
-pub fn neutral_bundle() -> SchemaBundle {
-    let profile = Profile::core_only(frontmatter::embedded_core_json())
-        .expect("the crate's own embedded core JSON is always valid");
-    SchemaBundle {
-        profile,
-        warnings: Vec::new(),
-    }
-}
-
-/// One human-readable line per [`MergeWarning`], for a `--quiet-schema-warnings`-free
-/// run's caveats. `navigator.toml`'s `schema.suppress_merge_warnings` (or
-/// the CLI flag of the same intent) suppresses these at the caller, not
-/// here -- this function always renders whatever it's given.
-#[must_use]
-pub fn describe_merge_warning(warning: &MergeWarning) -> String {
-    match warning {
-        MergeWarning::Override {
-            dimension,
-            key,
-            from_layer,
-            to_layer,
-            base_layer,
-        } => {
-            let severity = if *base_layer { "WARN" } else { "INFO" };
-            format!(
-                "{severity}: {dimension:?} '{key}' from '{from_layer}' overridden by '{to_layer}'"
-            )
-        }
-        MergeWarning::Removal {
-            dimension,
-            key,
-            removing_layer,
-            removed_from_layer,
-            base_layer,
-        } => {
-            let severity = if *base_layer { "WARN" } else { "INFO" };
-            match removed_from_layer {
-                Some(from) => format!(
-                    "{severity}: {dimension:?} '{key}' from '{from}' removed by '{removing_layer}'"
-                ),
-                None => format!(
-                    "{severity}: {dimension:?} '{key}' removed by '{removing_layer}' but nothing defined it"
-                ),
+            SentinelError::Io { path, source } => {
+                write!(f, "failed to read sentinel {}: {source}", path.display())
             }
+            SentinelError::Parse { path, source } => {
+                write!(f, "invalid sentinel {}: {source}", path.display())
+            }
+            SentinelError::UnsupportedVersion {
+                path,
+                found,
+                supported,
+            } => write!(
+                f,
+                "sentinel {} declares sentinel_version = {found}, but this navigator build only \
+                 supports {supported:?}. Upgrade navigator, or downgrade the sentinel_version in \
+                 the repo's navigator.toml.",
+                path.display()
+            ),
         }
+    }
+}
+
+impl std::error::Error for SentinelError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            SentinelError::Io { source, .. } => Some(source),
+            SentinelError::Parse { source, .. } => Some(source.as_ref()),
+            SentinelError::UnsupportedVersion { .. } => None,
+        }
+    }
+}
+
+/// Loads and strictly validates the `navigator.toml` at `repo_root`, if one
+/// exists.
+///
+/// Returns `Ok(Adoption::NotAdopted)` when the file is simply absent -- the
+/// expected, valid state for a repo that hasn't opted in. Any other failure
+/// to read the file (permissions, non-UTF-8, a directory in its place) is a
+/// real [`SentinelError::Io`], never silently treated as "not adopted."
+///
+/// # Errors
+/// [`SentinelError`] for an unreadable present file, a malformed/invalid
+/// sentinel, or an unsupported `sentinel_version`.
+pub fn load(repo_root: &Path) -> Result<Adoption, SentinelError> {
+    let path = repo_root.join("navigator.toml");
+
+    let contents = match std::fs::read_to_string(&path) {
+        Ok(contents) => contents,
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Adoption::NotAdopted);
+        }
+        Err(source) => return Err(SentinelError::Io { path, source }),
+    };
+
+    let parse_err = |source: figment2::Error| SentinelError::Parse {
+        path: path.clone(),
+        source: Box::new(source),
+    };
+
+    let probe: VersionProbe = Figment::new()
+        .merge(Toml::string(&contents))
+        .extract()
+        .map_err(parse_err)?;
+    if !SUPPORTED_SENTINEL_VERSIONS.contains(&probe.sentinel_version) {
+        return Err(SentinelError::UnsupportedVersion {
+            path,
+            found: probe.sentinel_version,
+            supported: SUPPORTED_SENTINEL_VERSIONS,
+        });
+    }
+
+    let sentinel: Sentinel = Figment::new()
+        .merge(Toml::string(&contents))
+        .extract()
+        .map_err(parse_err)?;
+    Ok(Adoption::Adopted(sentinel))
+}
+
+/// Minimal, permissive view used to read `sentinel_version` before the
+/// strict full parse. Deliberately NOT `deny_unknown_fields`: it must
+/// tolerate the extra fields a future schema version may add so it can reach
+/// the version those fields belong to and report it as
+/// [`SentinelError::UnsupportedVersion`].
+#[derive(Deserialize)]
+struct VersionProbe {
+    sentinel_version: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn write_sentinel(root: &Path, contents: &str) {
+        fs::write(root.join("navigator.toml"), contents).unwrap();
+    }
+
+    #[test]
+    fn full_sentinel_parses_to_expected_model() {
+        let root = TempDir::new().unwrap();
+        write_sentinel(
+            root.path(),
+            r#"
+                sentinel_version = 2
+                extensions = ["psa-apm@1", "psa-security@1"]
+                navigator_version = "1.2.3"
+
+                [schema]
+                profile = "core@1"
+                suppress_merge_warnings = true
+
+                [lint]
+                include = ["**/*.md"]
+                exclude = ["reference-materials/code-repositories/**"]
+
+                [symbols]
+                languages = ["go", "python", "typescript", "rust"]
+            "#,
+        );
+
+        let got = load(root.path()).unwrap();
+        assert_eq!(
+            got,
+            Adoption::Adopted(Sentinel {
+                sentinel_version: 2,
+                extensions: vec!["psa-apm@1".to_string(), "psa-security@1".to_string()],
+                navigator_version: Some("1.2.3".to_string()),
+                schema: SchemaConfig {
+                    profile: "core@1".to_string(),
+                    suppress_merge_warnings: true,
+                },
+                lint: Some(LintScope {
+                    include: vec!["**/*.md".to_string()],
+                    exclude: vec!["reference-materials/code-repositories/**".to_string()],
+                }),
+                symbols: Some(SymbolsScope {
+                    languages: vec![
+                        "go".to_string(),
+                        "python".to_string(),
+                        "typescript".to_string(),
+                        "rust".to_string(),
+                    ],
+                }),
+            })
+        );
+    }
+
+    #[test]
+    fn minimal_sentinel_with_only_required_fields_works() {
+        let root = TempDir::new().unwrap();
+        write_sentinel(
+            root.path(),
+            "sentinel_version = 2\nextensions = \"psa-apm@1\"\n\n[schema]\nprofile = \"core@1\"\n",
+        );
+
+        let got = load(root.path()).unwrap();
+        assert_eq!(
+            got,
+            Adoption::Adopted(Sentinel {
+                sentinel_version: 2,
+                extensions: vec!["psa-apm@1".to_string()],
+                navigator_version: None,
+                schema: SchemaConfig {
+                    profile: "core@1".to_string(),
+                    suppress_merge_warnings: false,
+                },
+                lint: None,
+                symbols: None,
+            })
+        );
+    }
+
+    #[test]
+    fn bare_string_and_array_extensions_yield_identical_vec() {
+        let bare = TempDir::new().unwrap();
+        write_sentinel(
+            bare.path(),
+            "sentinel_version = 2\nextensions = \"psa-apm@1\"\n\n[schema]\nprofile = \"core@1\"\n",
+        );
+        let array = TempDir::new().unwrap();
+        write_sentinel(
+            array.path(),
+            "sentinel_version = 2\nextensions = [\"psa-apm@1\"]\n\n[schema]\nprofile = \"core@1\"\n",
+        );
+
+        let Adoption::Adopted(bare) = load(bare.path()).unwrap() else {
+            panic!("expected Adopted");
+        };
+        let Adoption::Adopted(array) = load(array.path()).unwrap() else {
+            panic!("expected Adopted");
+        };
+        assert_eq!(bare.extensions, vec!["psa-apm@1".to_string()]);
+        assert_eq!(bare.extensions, array.extensions);
+    }
+
+    #[test]
+    fn extensions_array_preserves_declaration_order() {
+        let root = TempDir::new().unwrap();
+        write_sentinel(
+            root.path(),
+            "sentinel_version = 2\nextensions = [\"c-ext@1\", \"a-ext@1\", \"b-ext@1\"]\n\n[schema]\nprofile = \"core@1\"\n",
+        );
+        let Adoption::Adopted(sentinel) = load(root.path()).unwrap() else {
+            panic!("expected Adopted");
+        };
+        assert_eq!(
+            sentinel.extensions,
+            vec![
+                "c-ext@1".to_string(),
+                "a-ext@1".to_string(),
+                "b-ext@1".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn empty_extensions_array_parses_to_empty_vec() {
+        let root = TempDir::new().unwrap();
+        write_sentinel(
+            root.path(),
+            "sentinel_version = 2\nextensions = []\n\n[schema]\nprofile = \"core@1\"\n",
+        );
+        let Adoption::Adopted(sentinel) = load(root.path()).unwrap() else {
+            panic!("expected Adopted");
+        };
+        assert_eq!(sentinel.extensions, Vec::<String>::new());
+    }
+
+    #[test]
+    fn suppress_merge_warnings_defaults_to_false_and_round_trips_true() {
+        let default = TempDir::new().unwrap();
+        write_sentinel(
+            default.path(),
+            "sentinel_version = 2\nextensions = \"psa-apm@1\"\n\n[schema]\nprofile = \"core@1\"\n",
+        );
+        let set = TempDir::new().unwrap();
+        write_sentinel(
+            set.path(),
+            "sentinel_version = 2\nextensions = \"psa-apm@1\"\n\n[schema]\nprofile = \"core@1\"\nsuppress_merge_warnings = true\n",
+        );
+
+        let Adoption::Adopted(default) = load(default.path()).unwrap() else {
+            panic!("expected Adopted");
+        };
+        let Adoption::Adopted(set) = load(set.path()).unwrap() else {
+            panic!("expected Adopted");
+        };
+        assert!(!default.schema.suppress_merge_warnings);
+        assert!(set.schema.suppress_merge_warnings);
+    }
+
+    #[test]
+    fn typo_inside_schema_table_is_a_clear_parse_error() {
+        let root = TempDir::new().unwrap();
+        write_sentinel(
+            root.path(),
+            "sentinel_version = 2\nextensions = \"psa-apm@1\"\n\n[schema]\nprofile = \"core@1\"\nsuppres_merge_warnings = true\n",
+        );
+        assert!(matches!(
+            load(root.path()).unwrap_err(),
+            SentinelError::Parse { .. }
+        ));
+    }
+
+    #[test]
+    fn sentinel_version_1_now_fails_as_unsupported_version() {
+        let root = TempDir::new().unwrap();
+        write_sentinel(
+            root.path(),
+            "sentinel_version = 1\nschema = \"core@1\"\nextensions = \"psa-apm@1\"\n",
+        );
+        match load(root.path()).unwrap_err() {
+            SentinelError::UnsupportedVersion { found, .. } => assert_eq!(found, 1),
+            other => panic!("expected UnsupportedVersion, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn missing_file_is_not_adopted_not_an_error() {
+        let root = TempDir::new().unwrap();
+        assert_eq!(load(root.path()).unwrap(), Adoption::NotAdopted);
+    }
+
+    #[test]
+    fn unknown_field_is_a_clear_error() {
+        let root = TempDir::new().unwrap();
+        write_sentinel(
+            root.path(),
+            "sentinel_version = 2\nextensions = \"psa-apm@1\"\ntotally_made_up_field = \"oops\"\n\n[schema]\nprofile = \"core@1\"\n",
+        );
+        let err = load(root.path()).unwrap_err();
+        assert!(matches!(err, SentinelError::Parse { .. }));
+        assert!(err.to_string().contains("navigator.toml"));
+    }
+
+    #[test]
+    fn misspelled_nested_field_is_a_clear_error() {
+        let root = TempDir::new().unwrap();
+        write_sentinel(
+            root.path(),
+            "sentinel_version = 2\nextensions = \"psa-apm@1\"\n\n[schema]\nprofile = \"core@1\"\n\n[lint]\ninclud = [\"**/*.md\"]\n",
+        );
+        assert!(matches!(
+            load(root.path()).unwrap_err(),
+            SentinelError::Parse { .. }
+        ));
+    }
+
+    #[test]
+    fn wrong_type_for_sentinel_version_is_a_clear_error() {
+        let root = TempDir::new().unwrap();
+        write_sentinel(
+            root.path(),
+            "sentinel_version = \"one\"\nextensions = \"psa-apm@1\"\n\n[schema]\nprofile = \"core@1\"\n",
+        );
+        assert!(matches!(
+            load(root.path()).unwrap_err(),
+            SentinelError::Parse { .. }
+        ));
+    }
+
+    #[test]
+    fn unsupported_sentinel_version_is_a_clear_versioning_error() {
+        let root = TempDir::new().unwrap();
+        write_sentinel(
+            root.path(),
+            "sentinel_version = 999\nextensions = \"psa-apm@1\"\n\n[schema]\nprofile = \"core@1\"\n",
+        );
+        let err = load(root.path()).unwrap_err();
+        match &err {
+            SentinelError::UnsupportedVersion { found, .. } => assert_eq!(*found, 999),
+            other => panic!("expected UnsupportedVersion, got {other:?}"),
+        }
+        assert!(err.to_string().contains("999"));
+    }
+
+    // A FUTURE sentinel_version that also carries a field this build doesn't
+    // know must fail as UnsupportedVersion (telling the operator to upgrade
+    // navigator), NOT as an unknown-field parse error.
+    #[test]
+    fn future_version_with_unknown_field_is_unsupported_version_not_parse_error() {
+        let root = TempDir::new().unwrap();
+        write_sentinel(
+            root.path(),
+            "sentinel_version = 3\nextensions = \"psa-apm@1\"\nfield_added_in_v3 = true\n\n[schema]\nprofile = \"core@1\"\n",
+        );
+        match load(root.path()).unwrap_err() {
+            SentinelError::UnsupportedVersion { found, .. } => assert_eq!(found, 3),
+            other => panic!("expected UnsupportedVersion, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn malformed_toml_is_a_clear_error() {
+        let root = TempDir::new().unwrap();
+        write_sentinel(root.path(), "this is not [ valid toml");
+        assert!(matches!(
+            load(root.path()).unwrap_err(),
+            SentinelError::Parse { .. }
+        ));
+    }
+
+    #[test]
+    fn missing_required_field_is_a_clear_error() {
+        let root = TempDir::new().unwrap();
+        write_sentinel(
+            root.path(),
+            "sentinel_version = 2\n\n[schema]\nprofile = \"core@1\"\n",
+        );
+        assert!(matches!(
+            load(root.path()).unwrap_err(),
+            SentinelError::Parse { .. }
+        ));
+    }
+
+    #[test]
+    fn optional_sections_absent_leave_none() {
+        let root = TempDir::new().unwrap();
+        write_sentinel(
+            root.path(),
+            "sentinel_version = 2\nextensions = \"psa-apm@1\"\n\n[schema]\nprofile = \"core@1\"\n",
+        );
+        let Adoption::Adopted(sentinel) = load(root.path()).unwrap() else {
+            panic!("expected Adopted");
+        };
+        assert_eq!(sentinel.navigator_version, None);
+        assert_eq!(sentinel.lint, None);
+        assert_eq!(sentinel.symbols, None);
+    }
+
+    // A present-but-unreadable sentinel (a directory sitting where the file
+    // should be) must surface as Io, never be swallowed into NotAdopted.
+    #[test]
+    fn sentinel_path_that_is_a_directory_is_io_error_not_not_adopted() {
+        let root = TempDir::new().unwrap();
+        fs::create_dir(root.path().join("navigator.toml")).unwrap();
+        assert!(matches!(
+            load(root.path()).unwrap_err(),
+            SentinelError::Io { .. }
+        ));
+    }
+
+    // Non-UTF-8 bytes must be a clean Io error, not a panic or NotAdopted.
+    #[test]
+    fn non_utf8_sentinel_bytes_are_a_clean_io_error_not_a_panic() {
+        let root = TempDir::new().unwrap();
+        fs::write(root.path().join("navigator.toml"), [0xff, 0xfe, 0x00, 0xff]).unwrap();
+        assert!(matches!(
+            load(root.path()).unwrap_err(),
+            SentinelError::Io { .. }
+        ));
+    }
+
+    #[test]
+    fn duplicate_toml_key_is_a_clear_error() {
+        let root = TempDir::new().unwrap();
+        write_sentinel(
+            root.path(),
+            "sentinel_version = 1\nsentinel_version = 2\nextensions = \"psa-apm@1\"\n\n[schema]\nprofile = \"core@1\"\n",
+        );
+        assert!(matches!(
+            load(root.path()).unwrap_err(),
+            SentinelError::Parse { .. }
+        ));
+    }
+
+    #[test]
+    fn empty_symbols_table_present_parses_to_some_with_empty_languages() {
+        let root = TempDir::new().unwrap();
+        write_sentinel(
+            root.path(),
+            "sentinel_version = 2\nextensions = \"psa-apm@1\"\n\n[schema]\nprofile = \"core@1\"\n\n[symbols]\n",
+        );
+        let Adoption::Adopted(sentinel) = load(root.path()).unwrap() else {
+            panic!("expected Adopted");
+        };
+        assert_eq!(sentinel.symbols, Some(SymbolsScope { languages: vec![] }));
+    }
+
+    // The schema documents `schema.profile` and `extensions` entries as
+    // opaque strings with no format constraint, so an empty string is
+    // accepted rather than rejected. Pinned so it's a deliberate choice.
+    #[test]
+    fn empty_string_profile_and_extensions_entry_are_currently_accepted() {
+        let root = TempDir::new().unwrap();
+        write_sentinel(
+            root.path(),
+            "sentinel_version = 2\nextensions = \"\"\n\n[schema]\nprofile = \"\"\n",
+        );
+        let Adoption::Adopted(sentinel) = load(root.path()).unwrap() else {
+            panic!("expected Adopted");
+        };
+        assert_eq!(sentinel.schema.profile, "");
+        assert_eq!(sentinel.extensions, vec![String::new()]);
+    }
+
+    #[test]
+    fn float_sentinel_version_is_a_clear_error() {
+        let root = TempDir::new().unwrap();
+        write_sentinel(
+            root.path(),
+            "sentinel_version = 1.0\nextensions = \"psa-apm@1\"\n\n[schema]\nprofile = \"core@1\"\n",
+        );
+        assert!(matches!(
+            load(root.path()).unwrap_err(),
+            SentinelError::Parse { .. }
+        ));
+    }
+
+    #[test]
+    fn negative_sentinel_version_is_a_clear_error() {
+        let root = TempDir::new().unwrap();
+        write_sentinel(
+            root.path(),
+            "sentinel_version = -1\nextensions = \"psa-apm@1\"\n\n[schema]\nprofile = \"core@1\"\n",
+        );
+        assert!(matches!(
+            load(root.path()).unwrap_err(),
+            SentinelError::Parse { .. }
+        ));
+    }
+
+    #[test]
+    fn duplicate_extensions_entries_are_preserved_as_is() {
+        let root = TempDir::new().unwrap();
+        write_sentinel(
+            root.path(),
+            "sentinel_version = 2\nextensions = [\"psa-apm@1\", \"psa-apm@1\"]\n\n[schema]\nprofile = \"core@1\"\n",
+        );
+        let Adoption::Adopted(sentinel) = load(root.path()).unwrap() else {
+            panic!("expected Adopted");
+        };
+        assert_eq!(
+            sentinel.extensions,
+            vec!["psa-apm@1".to_string(), "psa-apm@1".to_string()]
+        );
+    }
+
+    #[test]
+    fn extensions_as_wrong_scalar_type_is_a_clear_parse_error_not_a_panic() {
+        let root = TempDir::new().unwrap();
+        write_sentinel(
+            root.path(),
+            "sentinel_version = 2\nextensions = 123\n\n[schema]\nprofile = \"core@1\"\n",
+        );
+        assert!(matches!(
+            load(root.path()).unwrap_err(),
+            SentinelError::Parse { .. }
+        ));
+    }
+
+    #[test]
+    fn extensions_array_containing_non_string_element_is_a_clear_parse_error() {
+        let root = TempDir::new().unwrap();
+        write_sentinel(
+            root.path(),
+            "sentinel_version = 2\nextensions = [\"ok\", 5]\n\n[schema]\nprofile = \"core@1\"\n",
+        );
+        assert!(matches!(
+            load(root.path()).unwrap_err(),
+            SentinelError::Parse { .. }
+        ));
+    }
+
+    #[test]
+    fn schema_table_present_but_missing_profile_is_a_clear_parse_error() {
+        let root = TempDir::new().unwrap();
+        write_sentinel(
+            root.path(),
+            "sentinel_version = 2\nextensions = \"psa-apm@1\"\n\n[schema]\nsuppress_merge_warnings = true\n",
+        );
+        assert!(matches!(
+            load(root.path()).unwrap_err(),
+            SentinelError::Parse { .. }
+        ));
+    }
+
+    #[test]
+    fn suppress_merge_warnings_with_non_bool_value_is_a_clear_parse_error() {
+        let root = TempDir::new().unwrap();
+        write_sentinel(
+            root.path(),
+            "sentinel_version = 2\nextensions = \"psa-apm@1\"\n\n[schema]\nprofile = \"core@1\"\nsuppress_merge_warnings = \"yes\"\n",
+        );
+        assert!(matches!(
+            load(root.path()).unwrap_err(),
+            SentinelError::Parse { .. }
+        ));
     }
 }

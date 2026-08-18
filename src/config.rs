@@ -1,15 +1,25 @@
 //! Runtime settings resolution, `flag > env > file > default`, per
 //! SC-STACK. The `navigator.toml` sentinel itself is parsed once, through
-//! figment2's own TOML provider (`sentinel::load`); this module merges that
-//! already-parsed result back in as one more figment2 layer alongside
-//! environment and CLI-flag overrides, so `navigator.toml` is never read
-//! from disk twice.
+//! `sentinel::load`; this module merges the parts of that already-parsed
+//! result it cares about back in as one more figment2 layer alongside the
+//! `WORKSPACE_TOOLS_*` environment prefix and the CLI flags, so
+//! `navigator.toml` is never read from disk twice.
+//!
+//! Orthogonal to `profile_resolve`: this module resolves the two runtime
+//! knobs a run answers to (`json`, `quiet_schema_warnings`), never the
+//! frontmatter profile a subcommand validates against.
 
 use figment2::providers::{Env, Serialized};
 use figment2::Figment;
 use serde::{Deserialize, Serialize};
 
 use crate::sentinel::Sentinel;
+
+/// The environment prefix this CLI's runtime knobs read from. Renamed from
+/// the historic `NAVIGATOR_` prefix when the CLI became `workspace-tools`
+/// (SC11): the prefix carries the component's name, and the component was
+/// renamed.
+const ENV_PREFIX: &str = "WORKSPACE_TOOLS_";
 
 /// Settings a repo, the environment, or a flag may each want the final say
 /// over -- everything else about a run (which files, which query) is a
@@ -45,8 +55,9 @@ struct FromFlags {
 }
 
 /// Resolves the final [`RuntimeConfig`] for this invocation: CLI flags win
-/// over `NAVIGATOR_*` environment variables, which win over `navigator.toml`,
-/// which wins over the built-in default.
+/// over `WORKSPACE_TOOLS_*` environment variables, which win over
+/// `navigator.toml`, which wins over the built-in default.
+#[must_use]
 pub fn resolve(
     sentinel: Option<&Sentinel>,
     cli_json: bool,
@@ -60,7 +71,7 @@ pub fn resolve(
         }));
     }
 
-    figment = figment.merge(Env::prefixed("NAVIGATOR_"));
+    figment = figment.merge(Env::prefixed(ENV_PREFIX));
 
     figment = figment.merge(Serialized::defaults(FromFlags {
         json: cli_json.then_some(true),
@@ -75,6 +86,26 @@ pub fn resolve(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sentinel::{load, Adoption};
+    use tempfile::TempDir;
+
+    fn adopted_sentinel(body: &str) -> Sentinel {
+        let root = TempDir::new().unwrap();
+        std::fs::write(root.path().join("navigator.toml"), body).unwrap();
+        match load(root.path()).unwrap() {
+            Adoption::Adopted(sentinel) => sentinel,
+            Adoption::NotAdopted => panic!("expected an adopted sentinel"),
+        }
+    }
+
+    #[test]
+    fn env_prefix_follows_the_rename() {
+        // SC11: the runtime knobs read the WORKSPACE_TOOLS_ prefix, not the
+        // historic NAVIGATOR_ one. The prefix's live effect on stderr
+        // rendering is asserted end-to-end (with a hermetic child-process
+        // env) in tests/cli.rs; this pins the source of truth for it.
+        assert_eq!(ENV_PREFIX, "WORKSPACE_TOOLS_");
+    }
 
     #[test]
     fn default_is_human_output_and_warnings_shown() {
@@ -85,13 +116,9 @@ mod tests {
 
     #[test]
     fn sentinel_can_set_quiet_schema_warnings() {
-        use figment2::providers::Format;
-
-        let toml = "sentinel_version = 2\nextensions = []\n[schema]\nsuppress_merge_warnings = true\n";
-        let sentinel: Sentinel = figment2::Figment::new()
-            .merge(figment2::providers::Toml::string(toml))
-            .extract()
-            .unwrap();
+        let sentinel = adopted_sentinel(
+            "sentinel_version = 2\nextensions = []\n\n[schema]\nprofile = \"core@2.0.0\"\nsuppress_merge_warnings = true\n",
+        );
         let config = resolve(Some(&sentinel), false, false);
         assert!(config.quiet_schema_warnings);
     }
