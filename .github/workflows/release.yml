@@ -175,7 +175,7 @@ jobs:
         if: ${{ github.event_name == 'push' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "${{ needs.resolve-version.outputs.tag }}" --title "${{ needs.resolve-version.outputs.tag }}" --generate-notes dist/*.tar.gz dist/checksums.txt
+        run: gh release create "${{ needs.resolve-version.outputs.tag }}" --repo "${{ github.repository }}" --title "${{ needs.resolve-version.outputs.tag }}" --generate-notes dist/*.tar.gz dist/checksums.txt
 
       - name: Dry-run summary
         if: ${{ github.event_name != 'push' }}
