@@ -1,8 +1,0 @@
-{
-    "name": "navigator",
-    "description": "Forces Claude toward navigator (hybrid BM25 + facet/boolean search and lint over a repo's frontmatter-tagged files) instead of the raw grep/find Bash calls it supersedes, and provisions the binary on session start.",
-    "author": {
-        "name": "John Richter"
-    },
-    "version": "2.0.0"
-}
