@@ -1,6 +1,6 @@
 # workspace-tools
 
-> **Purpose:** The navigator frontmatter/tag-aware discovery CLI and Claude Code plugin.
+> **Purpose:** The navigator frontmatter/tag-aware discovery CLI.
 
 One of the sibling repos under `psa-platform`. Worked on directly — not through the PSA `workspace`. Outside `workspace`, Claude has no PSA identity; only the general conventions below apply.
 

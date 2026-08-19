@@ -1,6 +1,6 @@
 # workspace-tools
 
-The navigator frontmatter/tag-aware discovery CLI and Claude Code plugin.
+The navigator frontmatter/tag-aware discovery CLI.
 
 ## Claude Code setup
 
