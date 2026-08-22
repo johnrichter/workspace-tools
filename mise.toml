@@ -4,3 +4,6 @@
 # Inert until this repo contains a Cargo package/workspace.
 [env]
 CARGO_TARGET_DIR = "{{env.HOME}}/.cache/cargo/target/workspace-tools"
+
+[tools]
+rust = "1.98.0"
