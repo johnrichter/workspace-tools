@@ -362,7 +362,7 @@ mod tests {
         write_md(
             root.path(),
             "incoherent.md",
-            "---\nname: \"target\"\ndescription: \"d\"\nid: \"a:b:c\"\ntags:\n  - type:knowledge\n  - status:complete\n  - privacy:internal\n  - owner:datadog\n  - topic:t\n  - feature:trace-explorer\nlinks: []\nupdated: 2026-07-11T00:00:00Z\n---\nbody\n",
+            "---\nname: \"target\"\ndescription: \"d\"\nid: \"a:b:c\"\ntags:\n  - type:knowledge\n  - status:complete\n  - privacy:example\n  - owner:example\n  - topic:t\n  - feature:trace-explorer\nlinks: []\nupdated: 2026-07-11T00:00:00Z\n---\nbody\n",
         );
 
         let mut a = args();
@@ -393,8 +393,8 @@ mod tests {
                     "type:knowledge",
                     "topic:testing",
                     "status:complete",
-                    "privacy:internal",
-                    "owner:datadog",
+                    "privacy:example",
+                    "owner:example",
                     "feature:trace-explorer",
                     "product:apm-tracing",
                     "suite:apm",
@@ -489,8 +489,8 @@ mod tests {
                     "type:report",
                     "topic:testing",
                     "status:complete",
-                    "privacy:internal",
-                    "owner:datadog",
+                    "privacy:example",
+                    "owner:example",
                     "source:slack",
                     "period:2026-05-01/2026-05-31",
                 ],
@@ -573,8 +573,8 @@ mod tests {
                     "type:knowledge",
                     "topic:testing",
                     "status:complete",
-                    "privacy:internal",
-                    "owner:datadog",
+                    "privacy:example",
+                    "owner:example",
                 ],
             ),
         );
@@ -645,8 +645,8 @@ mod tests {
                     "type:knowledge",
                     "topic:testing",
                     "status:complete",
-                    "privacy:internal",
-                    "owner:datadog",
+                    "privacy:example",
+                    "owner:example",
                 ],
             ),
         );
@@ -673,8 +673,8 @@ mod tests {
                     "type:knowledge",
                     "topic:testing",
                     "status:complete",
-                    "privacy:internal",
-                    "owner:datadog",
+                    "privacy:example",
+                    "owner:example",
                 ],
             ),
         );

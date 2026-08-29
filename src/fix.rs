@@ -476,7 +476,7 @@ mod tests {
     #[test]
     fn apply_makes_a_fixable_violation_file_valid_and_stamps_now() {
         let root = TempDir::new().unwrap();
-        write_md(root.path(), "doc.md", "---\nname: \"x\"\ndescription: \"d\"\nid: \"a:b:c\"\ntags:\n  - type:knowledge\n  - status:complete\n  - privacy:internal\n  - owner:datadog\n  - topic:t\nlinks: []\nupdated: 2020-01-01T00:00:00Z\n---\nbody\n");
+        write_md(root.path(), "doc.md", "---\nname: \"x\"\ndescription: \"d\"\nid: \"a:b:c\"\ntags:\n  - type:knowledge\n  - status:complete\n  - privacy:example\n  - owner:example\n  - topic:t\nlinks: []\nupdated: 2020-01-01T00:00:00Z\n---\nbody\n");
         let scanned = scan_fixture(root.path());
 
         let profile = crate::test_support::default_profile_for_tests();
@@ -590,7 +590,7 @@ mod tests {
         write_md(
             root.path(),
             ".claude/agents/reviewer.md",
-            "---\nname: \"reviewer\"\ndescription: \"d\"\ntools: \"Read, Bash\"\nmodel: \"claude-sonnet-5\"\nworkspace:\n  id: \"agent:x:reviewer\"\n  tags:\n    - type:agent\n    - topic:tooling\n    - status:complete\n    - privacy:internal\n    - owner:datadog\n  links: []\n  updated: 2020-01-01T00:00:00Z\n---\nbody\n",
+            "---\nname: \"reviewer\"\ndescription: \"d\"\ntools: \"Read, Bash\"\nmodel: \"claude-sonnet-5\"\nworkspace:\n  id: \"agent:x:reviewer\"\n  tags:\n    - type:agent\n    - topic:tooling\n    - status:complete\n    - privacy:example\n    - owner:example\n  links: []\n  updated: 2020-01-01T00:00:00Z\n---\nbody\n",
         );
         let scanned = scan_fixture(root.path());
 

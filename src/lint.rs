@@ -337,8 +337,8 @@ tags:\n\
   - type:knowledge\n\
   - topic:testing\n\
   - status:complete\n\
-  - privacy:internal\n\
-  - owner:datadog\n\
+  - privacy:example\n\
+  - owner:example\n\
 links: []\n\
 updated: 2026-07-11T00:00:00Z\n\
 ---\n\
@@ -501,8 +501,8 @@ body\n"
             "    - type:skill\n",
             "    - topic:testing\n",
             "    - status:complete\n",
-            "    - privacy:internal\n",
-            "    - owner:datadog\n",
+            "    - privacy:example\n",
+            "    - owner:example\n",
             "---\n",
             "body\n"
         );
@@ -599,7 +599,7 @@ body\n"
         write_md(
             root.path(),
             "doc.md",
-            "---\nname: \"x\"\ndescription: \"d\"\nid: \"a:b:c\"\ntags:\n  - type:a\n  - type:b\n  - status:complete\n  - privacy:internal\n  - owner:datadog\n  - topic:t\nlinks: []\nupdated: 2026-07-11T00:00:00Z\n---\nbody\n",
+            "---\nname: \"x\"\ndescription: \"d\"\nid: \"a:b:c\"\ntags:\n  - type:a\n  - type:b\n  - status:complete\n  - privacy:example\n  - owner:example\n  - topic:t\nlinks: []\nupdated: 2026-07-11T00:00:00Z\n---\nbody\n",
         );
         let scanned = scan_fixture(root.path());
         let profile = crate::test_support::default_profile_for_tests();
@@ -621,7 +621,7 @@ body\n"
         write_md(
             root.path(),
             "doc.md",
-            "---\nname: \"x\"\ndescription: \"d\"\nid: \"a:b:c\"\ntags:\n  - status:complete\n  - privacy:internal\n  - owner:datadog\n  - topic:t\nlinks: []\nupdated: 2026-07-11T00:00:00Z\n---\nbody\n",
+            "---\nname: \"x\"\ndescription: \"d\"\nid: \"a:b:c\"\ntags:\n  - status:complete\n  - privacy:example\n  - owner:example\n  - topic:t\nlinks: []\nupdated: 2026-07-11T00:00:00Z\n---\nbody\n",
         );
         let scanned = scan_fixture(root.path());
         let profile = crate::test_support::default_profile_for_tests();
@@ -639,7 +639,7 @@ body\n"
         write_md(
             root.path(),
             "doc.md",
-            "---\nname: \"x\"\ndescription: \"d\"\nid: \"a:b:c\"\ntags:\n  - type:knowledge\n  - status:complete\n  - privacy:internal\n  - owner:datadog\n  - topic:t\n  - feature:trace-explorer\nlinks: []\nupdated: 2026-07-11T00:00:00Z\n---\nbody\n",
+            "---\nname: \"x\"\ndescription: \"d\"\nid: \"a:b:c\"\ntags:\n  - type:knowledge\n  - status:complete\n  - privacy:example\n  - owner:example\n  - topic:t\n  - feature:trace-explorer\nlinks: []\nupdated: 2026-07-11T00:00:00Z\n---\nbody\n",
         );
         let scanned = scan_fixture(root.path());
         let profile = crate::test_support::default_profile_for_tests();
@@ -660,7 +660,7 @@ body\n"
         write_md(
             root.path(),
             "doc.md",
-            "---\nname: \"x\"\ndescription: \"d\"\nid: \"a:b:c\"\ntags:\n  - type:knowledge\n  - status:complete\n  - privacy:internal\n  - owner:datadog\n  - topic:t\n  - source:slack\nlinks: []\nupdated: 2026-07-11T00:00:00Z\n---\nbody\n",
+            "---\nname: \"x\"\ndescription: \"d\"\nid: \"a:b:c\"\ntags:\n  - type:knowledge\n  - status:complete\n  - privacy:example\n  - owner:example\n  - topic:t\n  - source:slack\nlinks: []\nupdated: 2026-07-11T00:00:00Z\n---\nbody\n",
         );
         let scanned = scan_fixture(root.path());
         let profile = crate::test_support::default_profile_for_tests();
@@ -678,7 +678,7 @@ body\n"
         write_md(
             root.path(),
             "report.md",
-            "---\nname: \"x\"\ndescription: \"d\"\nid: \"a:b:c\"\ntags:\n  - type:report\n  - status:complete\n  - privacy:internal\n  - owner:datadog\n  - topic:t\n  - source:slack\n  - period:not-a-range\nlinks: []\nupdated: 2026-07-11T00:00:00Z\n---\nbody\n",
+            "---\nname: \"x\"\ndescription: \"d\"\nid: \"a:b:c\"\ntags:\n  - type:report\n  - status:complete\n  - privacy:example\n  - owner:example\n  - topic:t\n  - source:slack\n  - period:not-a-range\nlinks: []\nupdated: 2026-07-11T00:00:00Z\n---\nbody\n",
         );
         let scanned = scan_fixture(root.path());
         let profile = crate::test_support::default_profile_for_tests();
@@ -720,7 +720,7 @@ body\n"
             root.path(),
             "doc.md",
             &format!(
-                "---\nname: \"x\"\ndescription: \"{long_description}\"\nid: \"a:b:c\"\ntags:\n  - type:knowledge\n  - status:complete\n  - privacy:internal\n  - owner:datadog\n  - topic:t\nlinks: []\nupdated: 2026-07-11T00:00:00Z\n---\nbody\n"
+                "---\nname: \"x\"\ndescription: \"{long_description}\"\nid: \"a:b:c\"\ntags:\n  - type:knowledge\n  - status:complete\n  - privacy:example\n  - owner:example\n  - topic:t\nlinks: []\nupdated: 2026-07-11T00:00:00Z\n---\nbody\n"
             ),
         );
         let scanned = scan_fixture(root.path());
@@ -745,7 +745,7 @@ body\n"
             root.path(),
             "over_cap.md",
             &format!(
-                "---\nname: \"x\"\ndescription: \"{long_description}\"\nid: \"a:b:c\"\ntags:\n  - type:knowledge\n  - status:complete\n  - privacy:internal\n  - owner:datadog\n  - topic:t\nlinks: []\nupdated: 2026-07-11T00:00:00Z\n---\nbody\n"
+                "---\nname: \"x\"\ndescription: \"{long_description}\"\nid: \"a:b:c\"\ntags:\n  - type:knowledge\n  - status:complete\n  - privacy:example\n  - owner:example\n  - topic:t\nlinks: []\nupdated: 2026-07-11T00:00:00Z\n---\nbody\n"
             ),
         );
         write_md(root.path(), "clean.md", conformant_frontmatter());
