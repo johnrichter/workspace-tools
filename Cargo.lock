@@ -293,7 +293,7 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 [[package]]
 name = "frontmatter"
 version = "0.1.0"
-source = "git+https://github.com/johnrichter/claude-shared-tooling.git?tag=rust/frontmatter/v0.1.0#0a265b194aba30fe6fc1aca62832c78088b783a8"
+source = "git+https://github.com/johnrichter/claude-shared-tooling.git?tag=rust%2Ffrontmatter%2Fv0.1.0#0a265b194aba30fe6fc1aca62832c78088b783a8"
 dependencies = [
  "facetquery",
  "globset",
@@ -454,7 +454,7 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
 name = "navigator"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "bm25",
  "clap",
