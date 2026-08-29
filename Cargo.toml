@@ -1,6 +1,6 @@
 [package]
 name = "navigator"
-version = "2.0.0"
+version = "2.1.0"
 edition = "2021"
 publish = false
 license = "MIT"
@@ -41,9 +41,10 @@ time = { version = "0.3.53", features = ["formatting", "macros"] }
 # The three reused Rust libraries this CLI composes (pure ranking/parsing/
 # query logic; no CLI concerns of their own) plus the fleet's CLI output
 # contract. Git-tag dependencies per SC-VERSIONING -- never a path dep
-# across repos. `[patch]` below redirects each to the sibling monorepo
-# checkout for a local build, since none has cut its first tag yet; drop
-# the patch once `rust/<crate>/v0.1.0` exists on the remote.
+# across repos. `[patch]` below still redirects the crates without a real
+# tag yet to the sibling monorepo checkout for a local build; drop each
+# remaining patch entry once its own `rust/<crate>/v0.1.0` exists on the
+# remote.
 bm25 = { git = "https://github.com/johnrichter/claude-shared-tooling.git", tag = "rust/bm25/v0.1.0" }
 frontmatter = { git = "https://github.com/johnrichter/claude-shared-tooling.git", tag = "rust/frontmatter/v0.1.0" }
 facetquery = { git = "https://github.com/johnrichter/claude-shared-tooling.git", tag = "rust/facetquery/v0.1.0" }
@@ -60,17 +61,17 @@ unsafe_code = "forbid"
 all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 
-# Pre-release bridge: `bm25`/`frontmatter`/`facetquery`/`clikit`/`logkit`
-# haven't cut a tag yet, so the git dependencies above are unresolvable
-# against the remote as declared. Mirrors `ai-shared-lib/rust/Cargo.toml`'s
-# own `[patch]` for the same reason (its `frontmatter -> facetquery` and
+# Pre-release bridge: `bm25`/`facetquery`/`clikit`/`logkit` haven't cut a
+# tag yet, so their git dependencies above are unresolvable against the
+# remote as declared. Mirrors `ai-shared-lib/rust/Cargo.toml`'s own
+# `[patch]` for the same reason (its `frontmatter -> facetquery` and
 # `clikit -> logkit` edges): redirect to the sibling checkout on disk so a
 # local build and CI (which checks out both repos side by side) resolve
-# without a network fetch of a tag that doesn't exist. Remove this table
-# once every crate below has a released `rust/<name>/v0.1.0` tag.
+# without a network fetch of a tag that doesn't exist. `frontmatter` is
+# gone from this table now that `rust/frontmatter/v0.1.0` is a real,
+# pushed tag; remove each remaining entry once its own crate is tagged.
 [patch."https://github.com/johnrichter/claude-shared-tooling.git"]
 bm25 = { path = "../ai-shared-lib/rust/bm25" }
-frontmatter = { path = "../ai-shared-lib/rust/frontmatter" }
 facetquery = { path = "../ai-shared-lib/rust/facetquery" }
 clikit = { path = "../ai-shared-lib/rust/clikit" }
 logkit = { path = "../ai-shared-lib/rust/logkit" }
