@@ -100,5 +100,14 @@ already vouch for.
 - Quality reviewer: verify the `Cargo.lock` `source` line's commit hash
   (`4c7e098b2b315905a6753086b943fcff53d5c607`) against the real tag if in doubt --
   `git ls-remote --tags https://github.com/johnrichter/claude-shared-tooling.git rust/frontmatter/v0.2.0`.
+
+## Correction (quality review)
+
+`4c7e098b...` above is **wrong**: `rust/frontmatter/v0.2.0` is an annotated tag, and that is
+the *tag object's* SHA. Cargo records the *peeled commit*,
+`12198e08baea4fdede3cbbf1785aa143c0ef5233`. Corrected in `Cargo.lock` during review; take
+the `^{}` row from `git ls-remote --tags` (or `git rev-parse <tag>^{commit}`) for future
+repins. This section's claim that the hash is "cargo's own resolved value" does not hold.
+See `.task-reports/frontmatter-v0.2.0-bump-quality-review.md` (finding F1).
 - Test engineer: no new test surface from this change (pure dependency bump); existing
   suite is the correct regression net.

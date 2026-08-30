@@ -97,3 +97,18 @@ Not applicable — no CI pipeline invoked in this task; local `cargo build`/`tes
 
 **PASS** — all four independent checks confirm the implementer's report: this is a
 scoped, hash-verified, build/test/lint-clean, feature-inert dependency bump.
+
+## Correction (quality review)
+
+Two checks above were not sound:
+
+- **Check 2 was circular.** `ls-remote` prints two rows for an annotated tag; the recorded
+  `4c7e098b...` is the *tag object*, not the commit. The peeled commit — what cargo records —
+  is `12198e08baea4fdede3cbbf1785aa143c0ef5233` (the `^{}` row immediately below the one
+  quoted). Comparing a hash against the same command that supplied it is not independent
+  confirmation. Corrected in `Cargo.lock` during review.
+- **Check 4's upstream inspection was scoped too narrowly.** The crate `include_str!`s
+  `schemas/frontmatter/*.json` from outside `rust/frontmatter/`, and both schema files changed
+  between the tags. The additive-only conclusion survives, but not for the reason given.
+
+See `.task-reports/frontmatter-v0.2.0-bump-quality-review.md` (finding F1).
