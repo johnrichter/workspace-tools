@@ -177,6 +177,47 @@ Adequate for what it covers, with one real gap.
   embedded core schema. Nothing in this repo surfaces or pins them, but a downstream consumer
   reading `embedded_core_json()` for that prose would observe the new wording.
 
+## Release chain executed
+
+| Step | Outcome |
+|---|---|
+| Merge `chore/frontmatter-v0.2.0-bump` -> `main` (`git-tools merge`) | `4164461`, already-signed |
+| `git-tools push main` | `b380e5d` -> `4164461` |
+| `git-tools tag create 2.2.0 --shape vX.Y.Z` | tag `v2.2.0` signed, created, pushed |
+| CI on `main` and on tag `v2.2.0` | both success |
+| SC-DISTRIBUTION release workflow | success (3m23s); four archives + `checksums.txt` published, not a draft |
+| Published-asset verification | all four archives re-downloaded, `sha256sum -c checksums.txt` OK; `linux_arm64` binary runs and reports `navigator 2.2.0` |
+
+CI built the release with `cargo build --locked` on a cold cargo git cache, which independently confirms the corrected lockfile fragment resolves from a clean checkout — not just from this machine's warm cache.
+
+### governance-workspace-structure repin (marketplace repo)
+
+Done in worktree `.claude/worktrees/repin-navigator-v2.2.0`, plugin `0.5.0 -> 0.6.0`, merged as `4b01af1` and pushed to marketplace `main`.
+
+Loci moved (the first three are asserted to agree by `release/coherence_test.sh`):
+
+- `hooks/bootstrap.sh` — `NAVIGATOR_TAG="v2.2.0"`
+- `data/binary-digests.json` — tag plus all four per-(os,arch) rows, rekeyed to `navigator_2.2.0_*`
+- `navigator.toml` (repo root) — `navigator_version = "2.2.0"`
+- `.claude-plugin/plugin.json`, `CHANGELOG.md`, `README.md`
+
+Digests are **archive** sha256 values copied verbatim from the published `checksums.txt`, per this plugin's contract — see the plan-feedback section above for why the dispatch's extracted-binary instruction was not followed.
+
+Verification beyond the unit suites, since a green unit suite cannot prove a pin reaches a real artifact:
+
+- **End-to-end provisioning against the real release.** Ran `hooks/bootstrap.sh` with a scratch `CLAUDE_PLUGIN_DATA`/`WORKSPACE_TOOLS_DATA_HOME` and no base-URL override, so it fetched from GitHub: archive downloaded, matched the pinned digest, extracted, installed `navigator-2.2.0` with its sidecar, exported `WORKSPACE_TOOLS_BIN`. This is the producer↔consumer check that matters for a repin.
+- **Output parity.** `navigator lint` over the whole marketplace repo (1035 files scanned) is byte-for-byte identical under 2.1.0 and 2.2.0 once `service_version` is excluded — empirically confirming the "nothing declares `at_most_one` yet, so results are unchanged" claim rather than asserting it. Pre-existing rollup under both binaries: 993 valid, 1 invalid, 41 missing frontmatter.
+- **Old pin cross-check.** The retired `v2.1.0` `linux_arm64` row matches the sha256 of the real published 2.1.0 archive, independently confirming that this table has always pinned archive digests.
+- **Full plugin suite:** all 13 `*_test.sh` scripts pass, 0 failures.
+
+### Environment finding — the plugin suite is cwd-sensitive under this sandbox
+
+`hooks/bootstrap_test.sh` fails 19 cases when run with a cwd outside `/tmp`, and passes with cwd in `/tmp`. **This is pre-existing and not caused by the repin:** unmodified `main` content fails the same 19 cases from the same cwd, and the repinned content passes all cases from `/tmp`.
+
+Root cause is a sandbox artifact, not a plugin defect. Traced with `sh -x`: inside `digest_for` (`hooks/bootstrap.sh:230-238`) the `jq` invocation is replaced by `true` and returns empty, so every digest lookup misses and bootstrap reports "no pinned digest". `jq` itself works correctly from the same cwd when invoked directly, and PATH, tool resolution, and environment are byte-identical between the passing and failing cwds. Reduced to a minimal reproduction independent of the test suite.
+
+Actionable for whoever owns CI for this plugin: pin the suite's cwd, or invoke `jq` by absolute path in `digest_for`, so the result does not depend on where the runner happens to stand. Worth confirming the same artifact is not silently affecting other plugins' suites.
+
 ## Files changed by this review
 
 - `Cargo.lock` — F1 fix (git fragment -> peeled commit); navigator version -> 2.2.0.
