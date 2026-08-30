@@ -1,0 +1,3 @@
+# This repository is public. Declaring the tier explicitly avoids
+# relying on git-tools' own default.
+privacy_tier: public
