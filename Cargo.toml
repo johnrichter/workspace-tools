@@ -46,7 +46,7 @@ time = { version = "0.3.53", features = ["formatting", "macros"] }
 # remaining patch entry once its own `rust/<crate>/v0.1.0` exists on the
 # remote.
 bm25 = { git = "https://github.com/johnrichter/claude-shared-tooling.git", tag = "rust/bm25/v0.1.0" }
-frontmatter = { git = "https://github.com/johnrichter/claude-shared-tooling.git", tag = "rust/frontmatter/v0.1.0" }
+frontmatter = { git = "https://github.com/johnrichter/claude-shared-tooling.git", tag = "rust/frontmatter/v0.2.0" }
 facetquery = { git = "https://github.com/johnrichter/claude-shared-tooling.git", tag = "rust/facetquery/v0.1.0" }
 clikit = { git = "https://github.com/johnrichter/claude-shared-tooling.git", tag = "rust/clikit/v0.1.0" }
 logkit = { git = "https://github.com/johnrichter/claude-shared-tooling.git", tag = "rust/logkit/v0.1.0" }
