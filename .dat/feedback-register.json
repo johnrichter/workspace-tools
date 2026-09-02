@@ -1,0 +1,20 @@
+{
+  "_schema": "feedback-register/v1",
+  "description": "Findings owned by workspace-tools. Every entry is self-contained: it carries its own reproduction, root cause, proposed fix, and acceptance, so a builder needs no other document. Redistributed from the fleet open ledger.",
+  "projects": [
+    {
+      "slug": "fleet-ledger-redistribution",
+      "retired": "2026-09-01",
+      "summary": "The fleet open ledger held every repo's findings in one register. This carries the subset this repo owns back to it, re-adjudicated against live code.",
+      "entries": [
+        {
+          "id": "LED-176",
+          "title": "Navigator v2 (M7 \u2014 symbol/docs/refs surfaces) is still five one-line headlines, never decomposed into tasks",
+          "feedback": "**Component.** `workspace/.dat/archive/navigator-redesign/build-plan.md:249-257` (milestone M7 and its five phases, `M7.P1`-`M7.P5`). The work M7 describes spans three repos: `ai-shared-lib` (extracting the tree-sitter symbol core, M7.P1), `workspace-tools` (the `symbols`/`def`/`docs`/`refs` CLI subcommands, M7.P2-P4 \u2014 most of the headline work), and `marketplace/plugins/governance-workspace-structure` (extending the `navigator` skill to expose the new subcommands, M7.P5).\n**Symptom.** Each of M7's five phases is a single headline sentence in `build-plan.md` (lines 253-257), not a numbered task list with acceptance criteria the way M0-M6 are. The plan states outright that full decomposition was deferred to a \"v2 planning pass,\" and no such pass, and no decomposed task list, exists anywhere in the fleet.\n**Reproduction.**\n1. `grep -n \"^## M7\\|M7\\.\" workspace/.dat/archive/navigator-redesign/build-plan.md` \u2014 shows M7's five phases as single bullet headlines (lines 253-257), contrasted with earlier milestones' `M#.P#.T#` numbered task granularity used throughout the rest of the file.\n2. `find workspace/.dat -iname \"*navigator*v2*\"` and equivalent searches across `marketplace`, `workspace-tools`, and `ai-shared-lib` for a decomposed v2 plan \u2014 none exists; the effort itself is archived (`workspace/.dat/archive/navigator-redesign/`) with no active successor.\n**Root cause.** Not applicable \u2014 this is a planning gap, not a code defect.\n**Proposed fix.** Per the ledger: first decide whether v2 (symbol-aware `symbols`/`def`/`docs`/`refs` navigation) is still wanted before spending effort decomposing it. If yes, split the decomposition by repo: `ai-shared-lib` gets the `codechunk` extraction task list (M7.P1, \u2192 SC14); `workspace-tools` gets the `symbols`/`def`/`docs`/`refs` adapter and command task lists (M7.P2-P4, \u2192 SC13/SC14); `marketplace/plugins/governance-workspace-structure` gets the skill-extension and v1-cache-reuse task list (M7.P5).\n**Acceptance.** A new decomposed plan (or a fresh `.dat/` effort) exists with numbered tasks and acceptance criteria for each of M7.P1-P5, at the same granularity as this build plan's M0-M6, split across the three owning repos above \u2014 or an explicit operator decision is recorded that v2 is not being pursued.\n**Scope and risk.** Spans `ai-shared-lib` (symbol extraction) and `marketplace/plugins/governance-workspace-structure` (skill surface) in addition to the primary owner `workspace-tools` (the bulk of the CLI subcommand work). No code risk today since nothing has been built yet \u2014 the risk is scope creep or drift if decomposition happens piecemeal per repo without a shared cross-repo plan.\n**Origin.** navigator-redesign.\n**Evidence.** `workspace/.dat/archive/navigator-redesign/build-plan.md:249-257` (M7 headlines) and `:281-282` (SC13/SC14 mapping); `workspace/.dat/archive/navigator-redesign/build-plan.md:334-336` (M7-related residual risks, still headline-level); directory listing of `workspace/.dat/archive/` (no successor v2 effort); `workspace-tools/Cargo.toml`, `marketplace/plugins/governance-workspace-structure` layout (confirming the three-repo split this decomposition would need to respect).\n\n---",
+          "confidence": "high",
+          "added": "2026-09-01T00:00:00Z"
+        }
+      ]
+    }
+  ]
+}
